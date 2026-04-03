@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>YouTube to MP3 Converter</title>
+    <link
+      href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      body {
+        font-family: "Roboto", sans-serif;
+        background: #121212;
+        color: #fff;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        padding: 40px 20px;
+      }
+
+      h1 {
+        color: #ff4b5c;
+        text-align: center;
+        margin-bottom: 20px;
+        text-shadow: 2px 2px #000;
+      }
+
+      form,
+      #ytSearchForm {
+        display: flex;
+        flex-direction: column;
+        width: 100%;
+        max-width: 500px;
+        gap: 10px;
+        margin-bottom: 20px;
+      }
+
+      input {
+        padding: 12px;
+        border-radius: 8px;
+        border: none;
+        font-size: 16px;
+      }
+
+      button {
+        padding: 12px;
+        border-radius: 8px;
+        border: none;
+        background: #ff4b5c;
+        color: white;
+        font-size: 16px;
+        font-weight: bold;
+        cursor: pointer;
+        transition: background 0.3s;
+      }
+
+      button:hover {
+        background: #ff2e3c;
+      }
+
+      #ytResults,
+      #mp3List {
+        display: flex;
+        flex-direction: column;
+        gap: 15px;
+        width: 100%;
+        max-width: 500px;
+      }
+
+      .card {
+        background: #1f1f1f;
+        padding: 15px;
+        border-radius: 10px;
+        display: flex;
+        flex-direction: column;
+        box-shadow: 0 5px 15px rgba(0, 0, 0, 0.5);
+      }
+
+      .card p {
+        margin: 5px 0;
+        font-weight: bold;
+        color: #ff4b5c;
+        word-break: break-word;
+      }
+
+      audio {
+        width: 100%;
+        margin-top: 5px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>YouTube to MP3 Converter</h1>
+
+    <!-- YouTube Search -->
+    <div id="ytSearchForm">
+      <input type="text" id="ytQuery" placeholder="Search YouTube" />
+      <button type="button" onclick="searchYouTube()">Search</button>
+    </div>
+
+    <div id="ytResults"></div>
+
+    <!-- MP3 Converter -->
+    <form id="mp3Form">
+      <input type="text" id="url" placeholder="YouTube URL" required />
+      <input
+        type="text"
+        id="name"
+        placeholder="File name (without extension)"
+        required
+      />
+      <button type="submit">Convert & Listen</button>
+    </form>
+
+    <h2>Available MP3s:</h2>
+    <div id="mp3List"></div>
+
+    <script>
+      const API_KEY = "AIzaSyCneaeuYegIFiZKAPCcUDvIbw5dnXEHpMI"; // <-- replace with your YouTube API key
+
+      async function searchYouTube() {
+        const query = document.getElementById("ytQuery").value;
+        if (!query) return;
+        const res = await fetch(
+          `https://www.googleapis.com/youtube/v3/search?part=snippet&maxResults=5&q=${encodeURIComponent(query)}&type=video&key=${API_KEY}`,
+        );
+        const data = await res.json();
+
+        const resultsDiv = document.getElementById("ytResults");
+        resultsDiv.innerHTML = "";
+
+        data.items.forEach((item) => {
+          const card = document.createElement("div");
+          card.className = "card";
+
+          const title = document.createElement("p");
+          title.textContent = item.snippet.title;
+
+          const thumb = document.createElement("img");
+          thumb.src = item.snippet.thumbnails.default.url;
+          thumb.style.width = "120px";
+          thumb.style.borderRadius = "5px";
+          thumb.style.marginBottom = "5px";
+
+          const selectBtn = document.createElement("button");
+          selectBtn.textContent = "Select";
+          selectBtn.onclick = () => {
+            document.getElementById("url").value =
+              `https://www.youtube.com/watch?v=${item.id.videoId}`;
+          };
+
+          card.appendChild(thumb);
+          card.appendChild(title);
+          card.appendChild(selectBtn);
+          resultsDiv.appendChild(card);
+        });
+      }
+
+      // Load MP3 list
+      async function loadFiles() {
+        const res = await fetch("/files");
+        const files = await res.json();
+
+        const mp3List = document.getElementById("mp3List");
+        mp3List.innerHTML = "";
+
+        files.forEach((file) => {
+          const card = document.createElement("div");
+          card.className = "card";
+
+          const title = document.createElement("p");
+          title.textContent = file;
+
+          const audio = document.createElement("audio");
+          audio.controls = true;
+          audio.src = "/downloads/" + file;
+
+          card.appendChild(title);
+          card.appendChild(audio);
+          mp3List.appendChild(card);
+        });
+      }
+
+      // MP3 Form submission
+      document
+        .getElementById("mp3Form")
+        .addEventListener("submit", async (e) => {
+          e.preventDefault();
+          const url = document.getElementById("url").value;
+          const name = document.getElementById("name").value;
+
+          const response = await fetch("/extract", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ url, name }),
+          });
+
+          if (response.ok) {
+            alert("Processing started! Refreshing list in 5 seconds...");
+            setTimeout(loadFiles, 5000);
+          } else {
+            alert("Error starting conversion");
+          }
+        });
+
+      loadFiles();
+    </script>
+  </body>
+</html>
