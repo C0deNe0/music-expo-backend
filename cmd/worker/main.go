@@ -17,10 +17,10 @@ var ctx = context.Background()
 func main() {
 	fmt.Println("🚀 Worker started")
 
-	redisOpts, err := redis.ParseURL(os.Getenv("REDIS_URL"))
-	if err != nil {
-		fmt.Println("❌ invalid REDIS_URL:", err)
-		return
+	redisOpts := &redis.Options{
+		Addr:     os.Getenv("REDIS_HOST") + ":" + os.Getenv("REDIS_PORT"),
+		Username: os.Getenv("REDIS_USER"),
+		Password: os.Getenv("REDIS_PASSWORD"),
 	}
 	rdb := redis.NewClient(redisOpts)
 

@@ -15,13 +15,13 @@ func main() {
 		port = "8080"
 	}
 
-	redisURL := os.Getenv("REDIS_URL")
 	mongoURI := os.Getenv("MONGO_URI")
 	dbName := os.Getenv("DB_NAME")
 
-	redisOpts, err := redis.ParseURL(redisURL)
-	if err != nil {
-		panic("invalid REDIS_URL: " + err.Error())
+	redisOpts := &redis.Options{
+		Addr:     os.Getenv("REDIS_HOST") + ":" + os.Getenv("REDIS_PORT"),
+		Username: os.Getenv("REDIS_USER"),
+		Password: os.Getenv("REDIS_PASSWORD"),
 	}
 	rdb := redis.NewClient(redisOpts)
 
