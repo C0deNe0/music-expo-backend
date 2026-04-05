@@ -4,95 +4,97 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"log/slog"
 	"os"
 	"os/exec"
-	"time"
 
+	"github.com/C0deNe0/otify/internal/model"
+	"github.com/C0deNe0/otify/internal/repository"
 	"github.com/redis/go-redis/v9"
 )
 
 var ctx = context.Background()
 
 func main() {
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	fmt.Println("🚀 Worker started")
 
 	rdb := redis.NewClient(&redis.Options{
-		Addr: "localhost:6379",
+		Addr: os.Getenv("REDIS_URL"),
 	})
 
-	logger.Info("worker started")
+	redisRepo := repository.NewRedisRepo(rdb)
+
+	mongoRepo, err := repository.NewMongoRepo(
+		os.Getenv("MONGO_URI"),
+		os.Getenv("DB_NAME"),
+	)
+	if err != nil {
+		fmt.Println("❌ Mongo connection failed:", err)
+		return
+	}
+
+	fmt.Println("✅ Mongo connected")
 
 	for {
-		// wait for job
-		res, err := rdb.BRPop(ctx, 0*time.Second, "queue").Result()
+		jobID, err := redisRepo.Dequeue(ctx)
 		if err != nil {
-			logger.Error("redis error", "err", err)
+			fmt.Println("❌ dequeue error:", err)
 			continue
 		}
 
-		jobID := res[1]
-		logger.Info("processing job", "job_id", jobID)
+		fmt.Println("📦 Got job:", jobID)
 
-		processJob(rdb, logger, jobID)
+		err = redisRepo.UpdateJob(ctx, jobID, map[string]interface{}{
+			"status": string(model.StatusProcessing),
+		})
+		if err != nil {
+			fmt.Println("❌ update error:", err)
+		}
+
+		job, err := redisRepo.GetJob(ctx, jobID)
+		if err != nil {
+			fmt.Println("❌ get job error:", err)
+			continue
+		}
+
+		file := job.Name + ".mp3"
+
+		fmt.Println("⬇️ Downloading:", job.URL)
+
+		cmd := exec.Command("yt-dlp", "-x", "--audio-format", "mp3", "-o", file, job.URL)
+
+		var stderr bytes.Buffer
+		cmd.Stderr = &stderr
+
+		err = cmd.Run()
+		if err != nil {
+			fmt.Println("❌ yt-dlp failed:", stderr.String())
+
+			redisRepo.UpdateJob(ctx, jobID, map[string]interface{}{
+				"status": string(model.StatusFailed),
+				"error":  stderr.String(),
+			})
+			continue
+		}
+
+		fmt.Println("✅ Downloaded:", file)
+
+		fileID, err := mongoRepo.UploadFile(ctx, file, file)
+		if err != nil {
+			fmt.Println("❌ Mongo upload failed:", err)
+			continue
+		}
+
+		fmt.Println("✅ Uploaded to Mongo:", fileID)
+
+		err = redisRepo.UpdateJob(ctx, jobID, map[string]interface{}{
+			"status":  string(model.StatusDone),
+			"file_id": fileID,
+		})
+		if err != nil {
+			fmt.Println("❌ update error:", err)
+		}
+
+		os.Remove(file)
+		fmt.Println("🧹 cleaned file")
 	}
-}
-
-func processJob(rdb *redis.Client, logger *slog.Logger, jobID string) {
-	key := "job:" + jobID
-
-	// mark processing
-	rdb.HSet(ctx, key, "status", "processing")
-
-	jobData, err := rdb.HGetAll(ctx, key).Result()
-	if err != nil {
-		logger.Error("failed to get job", "err", err)
-		return
-	}
-
-	url := jobData["url"]
-	name := jobData["name"]
-
-	if name == "" {
-		name = jobID
-	}
-
-	output := fmt.Sprintf("downloads/%s.%%(ext)s", name)
-
-	cmd := exec.Command(
-		"yt-dlp",
-		"-x",
-		"--audio-format", "mp3",
-		"--audio-quality", "0",
-		"-o", output,
-		url,
-	)
-
-	var out bytes.Buffer
-	var stderr bytes.Buffer
-	cmd.Stdout = &out
-	cmd.Stderr = &stderr
-
-	err = cmd.Run()
-	if err != nil {
-		logger.Error("yt-dlp failed",
-			"err", err,
-			"stderr", stderr.String(),
-		)
-
-		rdb.HSet(ctx, key,
-			"status", "failed",
-			"error", stderr.String(),
-		)
-		return
-	}
-
-	fileName := name + ".mp3"
-
-	rdb.HSet(ctx, key,
-		"status", "done",
-		"file", fileName,
-	)
-
-	logger.Info("job done", "job_id", jobID)
 }
