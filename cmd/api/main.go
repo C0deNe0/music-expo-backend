@@ -19,9 +19,12 @@ func main() {
 	mongoURI := os.Getenv("MONGO_URI")
 	dbName := os.Getenv("DB_NAME")
 
-	rdb := redis.NewClient(&redis.Options{
-		Addr: redisURL,
-	})
+	redisOpts, err := redis.ParseURL(redisURL)
+	if err != nil {
+		panic("invalid REDIS_URL: " + err.Error())
+	}
+	rdb := redis.NewClient(redisOpts)
+
 
 	redisRepo := repository.NewRedisRepo(rdb)
 	mongoRepo, _ := repository.NewMongoRepo(mongoURI, dbName)
