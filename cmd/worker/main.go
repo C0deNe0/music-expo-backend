@@ -17,9 +17,13 @@ var ctx = context.Background()
 func main() {
 	fmt.Println("🚀 Worker started")
 
-	rdb := redis.NewClient(&redis.Options{
-		Addr: os.Getenv("REDIS_URL"),
-	})
+	redisOpts, err := redis.ParseURL(os.Getenv("REDIS_URL"))
+	if err != nil {
+		fmt.Println("❌ invalid REDIS_URL:", err)
+		return
+	}
+	rdb := redis.NewClient(redisOpts)
+
 
 	redisRepo := repository.NewRedisRepo(rdb)
 
